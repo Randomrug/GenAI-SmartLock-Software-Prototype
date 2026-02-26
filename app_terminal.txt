@@ -1,0 +1,413 @@
+import os
+
+import sys
+
+import time
+
+import threading
+
+import pickle
+
+
+
+print("🔐 GENAI_LOCK — Combined PIN + Voice + Face Smart Lock\n")
+
+
+
+# Workspace root (this file's directory)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+
+# Paths to submodules
+
+VOICE_DIR = os.path.join(BASE_DIR, "VoiceRecognition")
+
+FACENET_DIR = os.path.join(BASE_DIR, "FaceNet")
+
+
+
+# Combined decision parameters
+
+VOICE_WEIGHT = 0.5
+
+FACE_WEIGHT = 0.5
+
+COMBINED_THRESHOLD = 0.8
+
+
+
+for p in (VOICE_DIR, FACENET_DIR):
+
+    if p not in sys.path:
+
+        sys.path.insert(0, p)
+
+
+
+def ensure_pin_file(pin_path=os.path.join(BASE_DIR, "pin.txt")):
+
+    if not os.path.exists(pin_path):
+
+        print("No PIN set. Create a new numeric PIN to secure your lock.")
+
+        pin = input("Set new PIN: ").strip()
+
+        with open(pin_path, "w") as f:
+
+            f.write(pin)
+
+        print("PIN saved.\n")
+
+    with open(pin_path, "r") as f:
+
+        return f.read().strip()
+
+
+
+
+
+def record_audio(duration=5, sample_rate=16000, result_holder=None):
+
+    try:
+
+        import sounddevice as sd
+
+        import numpy as np
+
+    except Exception as e:
+
+        print(f"❌ sounddevice not available: {e}")
+
+        result_holder["audio"] = None
+
+        return
+
+
+
+    print("🎤 Recording audio...")
+
+    audio = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='float32')
+
+    sd.wait()
+
+    waveform = None
+
+    try:
+
+        import torch
+
+        waveform = torch.from_numpy(audio.flatten()).unsqueeze(0)
+
+    except Exception:
+
+        waveform = audio.flatten()
+
+
+
+    result_holder["audio"] = waveform
+
+    print("🎤 Audio recorded")
+
+
+
+
+
+def capture_face_image_sim(delay=5, save_path=None, result_holder=None):
+
+    # Use FaceNet's capture_live.capture_face_image
+
+    try:
+
+        from FaceNet.capture_live import capture_face_image
+
+    except Exception as e:
+
+        print(f"❌ Face capture module missing: {e}")
+
+        result_holder["face_ok"] = False
+
+        return
+
+
+
+    print(f"📷 Capturing face (delay {delay}s)...")
+
+    ok = capture_face_image(save_path, delay=delay) if save_path else capture_face_image(delay=delay)
+
+    result_holder["face_ok"] = ok
+
+    print("📷 Face capture done" if ok else "📷 Face capture failed")
+
+
+
+
+
+def verify_voice(waveform, templates_path=os.path.join(VOICE_DIR, "templates", "my_voice_template.pt")):
+
+    try:
+
+        import torch
+
+        from speechbrain.inference import SpeakerRecognition
+
+        from speechbrain.utils.fetching import LocalStrategy
+
+    except Exception as e:
+
+        print(f"❌ SpeechBrain not available: {e}")
+
+        return False, None
+
+
+
+    if not os.path.exists(templates_path):
+
+        print("❌ Voice template not found; run enroll_my_voice.py first.")
+
+        return False, None
+
+
+
+    verification = SpeakerRecognition.from_hparams(
+
+        source="speechbrain/spkrec-ecapa-voxceleb",
+
+        savedir=os.path.join(VOICE_DIR, "pretrained_models", "spkrec-ecapa-voxceleb"),
+
+        local_strategy=LocalStrategy.COPY
+
+    )
+
+
+
+    my_template = torch.load(templates_path)
+
+
+
+    emb_live = verification.encode_batch(waveform)
+
+    if emb_live.dim() == 3:
+
+        emb_live = emb_live.mean(dim=1)
+
+    elif emb_live.dim() == 1:
+
+        emb_live = emb_live.unsqueeze(0)
+
+
+
+    emb_template = my_template
+
+    if emb_template.dim() == 1:
+
+        emb_template = emb_template.unsqueeze(0)
+
+
+
+    score = torch.nn.functional.cosine_similarity(emb_template, emb_live, dim=1)[0].item()
+
+    ok = score > 0.65
+
+    return ok, score
+
+
+
+
+
+def verify_face_from_db(live_image_path, db_path=os.path.join(FACENET_DIR, "embeddings", "face_db.pkl")):
+
+    try:
+
+        from FaceNet.face_embedder import get_face_embedding
+
+        from FaceNet.verify_face import verify_face
+
+        from FaceNet.config import FACE_SIMILARITY_THRESHOLD
+
+    except Exception as e:
+
+        print(f"❌ FaceNet modules missing: {e}")
+
+        return False, None, None
+
+
+
+    if not os.path.exists(db_path):
+
+        print("❌ Face DB not found. Enroll faces first.")
+
+        return False, None, None
+
+
+
+    live_emb = get_face_embedding(live_image_path)
+
+    if live_emb is None:
+
+        return False, None, None
+
+
+
+    with open(db_path, 'rb') as f:
+
+        face_db = pickle.load(f)
+
+
+
+    owner, score, allowed = verify_face(live_emb, face_db, FACE_SIMILARITY_THRESHOLD)
+
+    return allowed, owner, score
+
+
+
+
+
+def main():
+
+    pin_correct = ensure_pin_file()
+
+    pin_try = input("Enter PIN to unlock: ").strip()
+
+    if pin_try != pin_correct:
+
+        print("❌ Incorrect PIN — access denied.")
+
+        return
+
+
+
+    # Prepare simultaneous capture
+
+    DURATION = 5
+
+    live_image_path = os.path.join(FACENET_DIR, "live.jpg")
+
+    results = {"audio": None, "face_ok": False}
+
+
+
+    t_audio = threading.Thread(target=record_audio, args=(DURATION, 16000, results))
+
+    t_face = threading.Thread(target=capture_face_image_sim, kwargs={"delay": DURATION, "save_path": live_image_path, "result_holder": results})
+
+
+
+    print("Starting simultaneous capture: speak the passphrase and look at the camera.")
+
+    t_face.start()
+
+    t_audio.start()
+
+    t_audio.join()
+
+    t_face.join()
+
+
+
+    if results["audio"] is None:
+
+        print("❌ Audio capture failed — cannot verify voice.")
+
+        return
+
+    if not results["face_ok"]:
+
+        print("❌ Face capture failed — cannot verify face.")
+
+        return
+
+
+
+    print("Verifying voice...")
+
+    v_ok, v_score = verify_voice(results["audio"]) if results["audio"] is not None else (False, None)
+
+    print(f"Voice score: {v_score}")
+
+
+
+    print("Verifying face...")
+
+    f_ok, f_owner, f_score = verify_face_from_db(live_image_path)
+
+    print(f"Face score: {f_score} (owner: {f_owner})")
+
+
+
+    # Combined decision: normalize scores to [0,1] and compute weighted sum
+
+    def normalize_score(s):
+
+        # cosine similarity roughly in [-1,1]; map to [0,1]
+
+        try:
+
+            return (s + 1.0) / 2.0
+
+        except Exception:
+
+            return 0.0
+
+
+
+    v_norm = normalize_score(v_score) if v_score is not None else 0.0
+
+    f_norm = normalize_score(f_score) if f_score is not None else 0.0
+
+
+
+    combined = VOICE_WEIGHT * v_norm + FACE_WEIGHT * f_norm
+
+    print(f"\nNormalized scores -> voice: {v_norm:.3f}, face: {f_norm:.3f}")
+
+    print(f"Combined score: {combined:.3f} (threshold {COMBINED_THRESHOLD})")
+
+
+
+    if combined >= COMBINED_THRESHOLD:
+
+        print("\n🎉 ACCESS GRANTED — combined verification passed.")
+
+    else:
+
+        print("\n🔒 ACCESS DENIED — combined verification failed.")
+
+
+
+
+
+if __name__ == '__main__':
+
+    main()
+
+
+
+
+
+sample output:
+
+) PS C:\Users\rithi\vs_code_proj\GENAI_LOCK> python app.py      
+
+🔐 GENAI_LOCK — Combined PIN + Voice + Face Smart Lock
+
+
+
+Enter PIN to unlock: 1111
+
+Starting simultaneous capture: speak the passphrase and look at the camera.
+
+📷 Capturing face (delay 5s)...
+
+🎤 Recording audio...
+
+📷 Camera ON. Capturing image in 5 seconds...
+
+🎤 Audio recorded
+
+✅ Image captured automatically
+
+📷 Face capture done
+
+Verifying voice...

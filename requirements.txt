@@ -1,0 +1,67 @@
+# Core Web Framework
+Flask==2.3.3
+Werkzeug==2.3.7
+Flask-CORS==4.0.0
+
+# Database (sqlite3 is built-in to Python, no need to install)
+
+# AI/ML Components
+openai==1.3.0
+requests==2.31.0
+numpy==1.24.3
+pandas==2.0.3
+scikit-learn==1.3.0
+scipy==1.11.3
+joblib==1.3.2
+
+# Machine Learning (Deep Learning optional)
+torch==2.0.1
+torchvision==0.15.2
+torchaudio==2.0.2
+
+# Face Recognition (using FaceNet - no dlib needed)
+# dlib is too heavy and requires CMake, using facenet_pytorch instead
+facenet-pytorch==2.3.0
+opencv-python==4.8.1.78
+
+# Voice Recognition (SpeechBrain)
+speechbrain==0.5.16
+sounddevice==0.4.6
+soundfile==0.12.1
+librosa==0.10.0
+
+# Audio Processing
+pydub==0.25.1
+
+# Image Processing
+Pillow==10.0.0
+imageio==2.31.3
+
+# Data Visualization (for dashboard)
+matplotlib==3.7.2
+seaborn==0.12.2
+plotly==5.17.0
+# chart.js is installed via CDN in frontend, not via pip
+
+# Cryptography
+cryptography==41.0.7
+pycryptodome==3.19.0
+
+# Utilities
+python-dotenv==1.0.0
+python-dateutil==2.8.2
+pytz==2023.3
+tzdata==2023.3
+colorama==0.4.6
+tqdm==4.66.1
+schedule==1.2.0
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-mock==3.11.1
+
+# Development
+black==23.9.1
+flake8==6.1.0
+autopep8==2.0.4

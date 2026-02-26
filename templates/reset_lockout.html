@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Lockout</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --success: #2ecc71;
+            --danger: #e74c3c;
+            --warning: #f39c12;
+            --light: #ecf0f1;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            color: var(--light);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            width: 100%;
+            max-width: 440px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(8px);
+        }
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 12px;
+            color: #00b4db;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        p {
+            opacity: 0.9;
+            margin-bottom: 16px;
+        }
+        label { display: block; margin: 12px 0 6px; font-weight: 600; }
+        input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(0, 0, 0, 0.35);
+            color: #fff;
+        }
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 12px;
+        }
+        .btn-warning { background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%); color: #111; }
+        .btn-success { background: linear-gradient(135deg, #0ba360 0%, #3cba92 100%); color: #fff; }
+        .status { margin-top: 12px; font-size: 0.95rem; text-align: center; }
+        .otp-section { display: none; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1><i class="fas fa-unlock-alt"></i> Reset Lockout</h1>
+        <p>OTP will be sent to the registered email address.</p>
+
+        <button class="btn btn-warning" id="sendOtpBtn" type="button">
+            <i class="fas fa-paper-plane"></i> Send OTP
+        </button>
+
+        <div class="otp-section" id="otpSection">
+            <label for="otpInput">Enter OTP</label>
+            <input type="text" id="otpInput" maxlength="6" placeholder="6-digit OTP">
+            <button class="btn btn-success" id="verifyOtpBtn" type="button">
+                <i class="fas fa-unlock"></i> Verify and Unlock
+            </button>
+        </div>
+
+        <div class="status" id="statusMsg"></div>
+    </div>
+
+    <script>
+        const statusMsg = document.getElementById('statusMsg');
+        const otpSection = document.getElementById('otpSection');
+        const sendOtpBtn = document.getElementById('sendOtpBtn');
+        const verifyOtpBtn = document.getElementById('verifyOtpBtn');
+
+        sendOtpBtn.addEventListener('click', async () => {
+            statusMsg.textContent = 'Sending OTP...';
+            try {
+                const resp = await fetch('/api/lockout/request-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await resp.json();
+                if (resp.ok && data.success) {
+                    otpSection.style.display = 'block';
+                    statusMsg.textContent = 'OTP sent to registered email.';
+                } else {
+                    statusMsg.textContent = data.message || 'Failed to send OTP.';
+                }
+            } catch (e) {
+                statusMsg.textContent = 'Error sending OTP.';
+            }
+        });
+
+        verifyOtpBtn.addEventListener('click', async () => {
+            const otp = document.getElementById('otpInput').value.trim();
+            if (!otp) {
+                statusMsg.textContent = 'Enter OTP.';
+                return;
+            }
+            statusMsg.textContent = 'Verifying OTP...';
+            try {
+                const verifyResp = await fetch('/api/lockout/verify-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ otp })
+                });
+                const verifyData = await verifyResp.json();
+                if (!verifyResp.ok || !verifyData.success) {
+                    statusMsg.textContent = verifyData.message || 'OTP verification failed.';
+                    return;
+                }
+
+                const resetResp = await fetch('/api/lockout/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const resetData = await resetResp.json();
+                if (resetResp.ok && resetData.success) {
+                    statusMsg.textContent = 'Lockout reset successfully. You can close this window.';
+                } else {
+                    statusMsg.textContent = resetData.message || 'Failed to reset lockout.';
+                }
+            } catch (e) {
+                statusMsg.textContent = 'Error verifying OTP.';
+            }
+        });
+    </script>
+</body>
+</html>
