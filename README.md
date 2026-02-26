@@ -1,6 +1,3 @@
-Here’s a clean, friendly, professional README that explains everything properly — without turning into a scrolling marathon and without sounding like a stand-up comedy show.
-
----
 
 # 🔐 GenAI Smart Lock – Multi-Factor Adaptive Security System
 
